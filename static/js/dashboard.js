@@ -575,7 +575,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
               socket.emit('client_frame', { image: frameData });
             }
           }
-        }, 50);
+        }, 200);
       };
     })
     .catch(err => {
