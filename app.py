@@ -461,15 +461,20 @@ def process_and_emit_frame(frame):
         print(f"[PROCESS ERROR] {e}", flush=True)
         traceback.print_exc()
 
+_processing_busy = False
+
 @socketio.on('client_frame')
 def handle_client_frame(data):
     """Process frame INLINE and emit result directly from the same handler context"""
+    global _processing_busy
+    if _processing_busy: return  # Drop frame if still processing previous one
     if "image" not in data: return
     encoded_data = data['image']
     if ',' in encoded_data:
         encoded_data = encoded_data.split(',')[1]
 
     try:
+        _processing_busy = True
         nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is not None:
@@ -477,6 +482,8 @@ def handle_client_frame(data):
             process_and_emit_frame(frame)
     except Exception as e:
         print(f"[FRAME DECODE ERROR] {e}", flush=True)
+    finally:
+        _processing_busy = False
 
 
 # ─── TELEMETRY LOOP ──────────────────────────────────────────────────────────────

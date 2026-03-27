@@ -565,17 +565,22 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         if (streamInterval) clearInterval(streamInterval);
         streamInterval = setInterval(() => {
           if (videoElement.readyState >= 2) {
-            if (captureCanvas.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
-              captureCanvas.width = videoElement.videoWidth;
-              captureCanvas.height = videoElement.videoHeight;
+            // Cap resolution to 480p for fast cloud processing
+            const maxW = 480;
+            const scale = Math.min(1, maxW / videoElement.videoWidth);
+            const w = Math.round(videoElement.videoWidth * scale);
+            const h = Math.round(videoElement.videoHeight * scale);
+            if (captureCanvas.width !== w && w > 0) {
+              captureCanvas.width = w;
+              captureCanvas.height = h;
             }
             if (captureCanvas.width > 0) {
               captureCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
-              const frameData = captureCanvas.toDataURL('image/jpeg', 0.6);
+              const frameData = captureCanvas.toDataURL('image/jpeg', 0.35);
               socket.emit('client_frame', { image: frameData });
             }
           }
-        }, 200);
+        }, 250);
       };
     })
     .catch(err => {
