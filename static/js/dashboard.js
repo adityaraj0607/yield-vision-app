@@ -588,8 +588,23 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
 }
 
 // Receive processed frame back from server pipeline
+let hasReceivedServerFrame = false;
 socket.on('processed_frame', (data) => {
   if (streamImg && data.image) {
+    hasReceivedServerFrame = true;
     streamImg.src = data.image;
   }
 });
+
+// Fallback: if server hasn't responded in 3s, show raw local webcam feed directly
+setTimeout(() => {
+  if (!hasReceivedServerFrame && streamImg && captureCanvas) {
+    addConsole('Server stream not yet active, showing local camera fallback', 'warning');
+    setInterval(() => {
+      if (!hasReceivedServerFrame && videoElement.readyState >= 2 && captureCanvas.width > 0) {
+        captureCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
+        streamImg.src = captureCanvas.toDataURL('image/jpeg', 0.7);
+      }
+    }, 100);
+  }
+}, 3000);

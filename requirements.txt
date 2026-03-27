@@ -4,3 +4,4 @@ opencv-python-headless>=4.8.0
 numpy>=1.24.0
 Pillow>=10.0.0
 gunicorn>=21.2.0
+simple-websocket>=1.0.0
