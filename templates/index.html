@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Yield-Vision | OpenCV PCB Inspection Panel</title>
+<meta name="description" content="Real-time OpenCV PCB defect inspection dashboard with YOLOv5 detection"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="stylesheet" href="/static/css/dashboard.css"/>
+</head>
+<body>
+
+<!-- ═══ TOP HEADER ═══ -->
+<header class="top-bar">
+  <div class="brand">
+    <div class="brand-logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect x="2" y="2" width="28" height="28" rx="4" stroke="#00FF88" stroke-width="1.5"/>
+        <rect x="8" y="8" width="7" height="7" fill="#00FF88" opacity="0.8"/>
+        <rect x="17" y="8" width="7" height="7" fill="#00CCFF" opacity="0.8"/>
+        <rect x="8" y="17" width="7" height="7" fill="#00CCFF" opacity="0.8"/>
+        <rect x="17" y="17" width="7" height="7" fill="#00FF88" opacity="0.8"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">YIELD-VISION</div>
+      <div class="brand-sub">Automated Optical Inspection System v3.0 — Real Fault Detection</div>
+    </div>
+  </div>
+
+  <div class="header-center">
+    <div id="system-status-badge" class="status-badge status-online">
+      <span class="pulse-dot"></span>
+      <span id="system-status-label">SYSTEM ONLINE</span>
+    </div>
+    <div id="circuit-badge" class="circuit-badge circuit-unknown">
+      <span id="circuit-icon">◈</span>
+      <span id="circuit-label">CIRCUIT: UNKNOWN</span>
+    </div>
+  </div>
+
+  <div class="header-right">
+    <div class="clock-block">
+      <div id="clock" class="clock-time">00:00:00</div>
+      <div id="clock-date" class="clock-date">--/--/----</div>
+    </div>
+    <div class="header-stats">
+      <div class="h-stat">
+        <span class="h-stat-val" id="hdr-fps">0.0</span>
+        <span class="h-stat-lbl">FPS</span>
+      </div>
+      <div class="h-stat">
+        <span class="h-stat-val" id="hdr-defects">0</span>
+        <span class="h-stat-lbl">DEFECTS</span>
+      </div>
+      <div class="h-stat">
+        <span class="h-stat-val" id="hdr-boards">0</span>
+        <span class="h-stat-lbl">BOARDS</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ MAIN LAYOUT ═══ -->
+<main class="main-grid">
+
+  <!-- ─── LEFT SIDEBAR ─── -->
+  <aside class="sidebar-left">
+
+    <!-- System Status -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-green"></span>SYSTEM STATUS</div>
+      <div class="status-grid">
+        <div class="st-row"><span class="st-key">CAMERA</span><span class="st-val st-green" id="st-camera">ACTIVE</span></div>
+        <div class="st-row"><span class="st-key">AI MODEL</span><span class="st-val st-cyan" id="st-model">MOCK MODE</span></div>
+        <div class="st-row"><span class="st-key">STREAM</span><span class="st-val st-green" id="st-stream">MJPEG</span></div>
+        <div class="st-row"><span class="st-key">SOCKET</span><span class="st-val st-green" id="st-socket">CONNECTED</span></div>
+        <div class="st-row"><span class="st-key">TILT</span><span class="st-val st-cyan" id="st-tilt">0.0°</span></div>
+        <div class="st-row"><span class="st-key">PAN</span><span class="st-val st-cyan" id="st-pan">0.0°</span></div>
+      </div>
+    </section>
+
+    <!-- IMU Telemetry -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-cyan"></span>IMU TELEMETRY</div>
+      <div class="imu-display">
+        <div class="imu-row">
+          <span class="imu-label">ROLL</span>
+          <div class="imu-bar-wrap"><div class="imu-bar" id="imu-roll-bar" style="width:50%"></div></div>
+          <span class="imu-val" id="imu-roll">0.00°</span>
+        </div>
+        <div class="imu-row">
+          <span class="imu-label">PITCH</span>
+          <div class="imu-bar-wrap"><div class="imu-bar imu-pitch" id="imu-pitch-bar" style="width:50%"></div></div>
+          <span class="imu-val" id="imu-pitch">0.00°</span>
+        </div>
+        <div class="imu-row">
+          <span class="imu-label">YAW</span>
+          <div class="imu-bar-wrap"><div class="imu-bar imu-yaw" id="imu-yaw-bar" style="width:50%"></div></div>
+          <span class="imu-val" id="imu-yaw">0.00°</span>
+        </div>
+      </div>
+      <div class="accel-grid">
+        <div class="accel-val"><span class="accel-lbl">AX</span><span id="imu-ax">0.000</span></div>
+        <div class="accel-val"><span class="accel-lbl">AY</span><span id="imu-ay">0.000</span></div>
+        <div class="accel-val"><span class="accel-lbl">AZ</span><span id="imu-az">9.810</span></div>
+      </div>
+    </section>
+
+    <!-- Tilt Control -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-orange"></span>TILT CONTROL</div>
+      <div class="tilt-ring-wrap">
+        <canvas id="tilt-canvas" width="140" height="140"></canvas>
+        <div class="tilt-center-val" id="tilt-center">0°</div>
+      </div>
+      <input type="range" id="tilt-slider" min="-45" max="45" value="0" step="1" class="tilt-slider"/>
+      <div class="tilt-slider-labels">
+        <span>-45°</span><span>0°</span><span>+45°</span>
+      </div>
+    </section>
+
+    <!-- Scan Stats -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-green"></span>SESSION STATS</div>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-num st-green" id="stat-boards">0</div>
+          <div class="stat-lbl">BOARDS</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num st-green" id="stat-pass">0</div>
+          <div class="stat-lbl">PASS</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num st-red" id="stat-fail">0</div>
+          <div class="stat-lbl">FAIL</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num st-orange" id="stat-defects">0</div>
+          <div class="stat-lbl">DEFECTS</div>
+        </div>
+      </div>
+    </section>
+
+  </aside>
+
+  <!-- ─── CENTER: VIDEO FEED ─── -->
+  <section class="video-section">
+    <div class="video-label-row">
+      <span class="vid-label">● LIVE OPENCV FEED — CAMERA 01</span>
+      <span class="vid-label" id="vid-scan-status">MONITORING</span>
+    </div>
+
+    <!-- ⚠ FAULT ALERT BANNER (appears above video) -->
+    <div id="fault-banner" class="fault-banner hidden">
+      <div class="fault-banner-icon">⚠</div>
+      <div class="fault-banner-text" id="fault-banner-text">FAULTY CIRCUIT DETECTED</div>
+      <button class="fault-dismiss" onclick="dismissAlert()">✕ DISMISS</button>
+    </div>
+
+    <div class="video-wrap" id="video-wrap">
+      <img id="video-stream" src="" alt="OpenCV Live Feed"
+           onerror="if (this.src !== window.location.href) this.src='/static/img/offline.png'"/>
+      <!-- Hidden elements for local webcam capture -->
+      <video id="local-webcam" autoplay muted playsinline style="display:none;"></video>
+      <canvas id="capture-canvas" style="display:none;"></canvas>
+      <!-- Corner brackets rendered via CSS -->
+      <div class="vid-corner tl"></div>
+      <div class="vid-corner tr"></div>
+      <div class="vid-corner bl"></div>
+      <div class="vid-corner br"></div>
+
+      <!-- FAULT flash overlay -->
+      <div id="fault-overlay" class="fault-flash-overlay hidden"></div>
+
+      <!-- Scan progress overlay -->
+      <div id="scan-overlay" class="scan-overlay hidden">
+        <div class="scan-overlay-content">
+          <div class="scan-spinner"></div>
+          <div class="scan-overlay-text">SCANNING</div>
+          <div class="scan-overlay-angle" id="scan-angle-display">Angle: 0°</div>
+          <div class="scan-progress-wrap">
+            <div class="scan-progress-bar" id="scan-progress-bar"></div>
+          </div>
+          <div class="scan-step-info" id="scan-step-info">Step 1 / 7</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Row -->
+    <div class="control-row">
+      <button id="btn-scan" class="btn-primary" onclick="startScan()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <polygon points="4,2 14,8 4,14"/>
+        </svg>
+        RUN FULL SCAN
+      </button>
+      <button id="btn-reg-ref" class="btn-primary" onclick="registerReference()" style="background:#00D4FF; color:#000; border-color:#00D4FF; box-shadow:0 0 10px rgba(0,212,255,0.4);">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 2 C4.686 2 2 4.686 2 8 C2 11.314 4.686 14 8 14 C11.314 14 14 11.314 14 8 C14 4.686 11.314 2 8 2 Z M8 11 C6.343 11 5 9.657 5 8 C5 6.343 6.343 5 8 5 C9.657 5 11 6.343 11 8 C11 9.657 9.657 11 8 11 Z"/>
+        </svg>
+        SET GOLDEN CIRCUIT
+      </button>
+      <button class="btn-secondary" onclick="clearDefects()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10"/>
+        </svg>
+        CLEAR LOG
+      </button>
+      <button class="btn-secondary" onclick="exportLog()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 2v8M5 7l3 3 3-3M3 12h10v2H3z"/>
+        </svg>
+        EXPORT CSV
+      </button>
+      <div class="fps-indicator">
+        <span class="fps-label">FPS</span>
+        <canvas id="fps-sparkline" width="80" height="30"></canvas>
+        <span id="fps-display" class="fps-val">0.0</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── RIGHT SIDEBAR ─── -->
+  <aside class="sidebar-right">
+
+    <!-- Defect Summary Donut -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-orange"></span>DEFECT ANALYSIS</div>
+      <canvas id="defect-donut" width="160" height="160"></canvas>
+      <div id="defect-legend" class="defect-legend"></div>
+    </section>
+
+    <!-- Yield Meter -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-green"></span>YIELD RATE</div>
+      <div class="yield-wrap">
+        <canvas id="yield-arc" width="160" height="90"></canvas>
+        <div class="yield-val" id="yield-val">100%</div>
+        <div class="yield-lbl">PASS RATE</div>
+      </div>
+    </section>
+
+    <!-- Defect Log -->
+    <section class="panel panel-log">
+      <div class="panel-title"><span class="dot dot-red"></span>DEFECT LOG
+        <span class="log-count" id="log-count">0 entries</span>
+      </div>
+      <div class="defect-log" id="defect-log">
+        <div class="log-empty">No defects detected. System monitoring...</div>
+      </div>
+    </section>
+
+    <!-- JARVIS Console -->
+    <section class="panel">
+      <div class="panel-title"><span class="dot dot-cyan"></span>J.A.R.V.I.S CONSOLE</div>
+      <div class="console-log" id="console-log">
+        <div class="console-line">>> Yield-Vision v3.0 online</div>
+        <div class="console-line">>> CameraThread initialized (zero-lag)</div>
+        <div class="console-line">>> YOLOv5 engine loading...</div>
+        <div class="console-line">>> Fault detection armed</div>
+      </div>
+    </section>
+
+  </aside>
+
+</main>
+
+<!-- ═══ BOTTOM BAR ═══ -->
+<footer class="bottom-bar">
+  <div class="bb-item">
+    <span class="bb-label">SCAN ANGLES</span>
+    <div class="angle-chips" id="angle-chips">
+      <span class="angle-chip" data-angle="-45">-45°</span>
+      <span class="angle-chip" data-angle="-30">-30°</span>
+      <span class="angle-chip" data-angle="-15">-15°</span>
+      <span class="angle-chip active" data-angle="0">0°</span>
+      <span class="angle-chip" data-angle="15">+15°</span>
+      <span class="angle-chip" data-angle="30">+30°</span>
+      <span class="angle-chip" data-angle="45">+45°</span>
+    </div>
+  </div>
+  <div class="bb-item">
+    <span class="bb-label">PIPELINE</span>
+    <div class="pipeline-steps">
+      <div class="pipe-step active"><span>CAPTURE</span></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step active"><span>PREPROCESS</span></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step active"><span>INFERENCE</span></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step active"><span>ANNOTATE</span></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step active"><span>STREAM</span></div>
+    </div>
+  </div>
+  <div class="bb-item bb-right">
+    <span class="bb-label">UPTIME</span>
+    <span id="uptime" class="bb-val">00:00:00</span>
+  </div>
+</footer>
+
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>
