@@ -350,100 +350,99 @@ def vision_worker_loop():
     global latest_client_frame
     last_eval_time = time.time()
     frames_processed = 0
+    print("[VISION WORKER] Background thread started successfully!", flush=True)
     
     while True:
         if latest_client_frame is None:
             time.sleep(0.01)
             continue
-            
-        frame = latest_client_frame
-        latest_client_frame = None  # Clear to drop frames until we're done processing this one
         
-        # ── Simulated Camera Tilt / Rotation
-        tilt = system_state["tilt_angle"]
-        if tilt != 0.0:
-            h, w = frame.shape[:2]
-            M = cv2.getRotationMatrix2D((w // 2, h // 2), tilt, 1.0)
-            frame = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-
-        if system_state.get("capture_reference"):
-            system_state["capture_reference"] = False
-            cv2.imwrite(os.path.join(BASE_DIR, "reference.jpg"), frame)
-            ref_matcher.load_reference(os.path.join(BASE_DIR, "reference.jpg"))
-            socketio.emit("reference_registered", {"status": "success", "kp": len(ref_matcher.kp_ref) if ref_matcher.kp_ref else 0})
-
-        # 1. ORB Reference Matching
-        is_golden, match_score = ref_matcher.check_match(frame)
-        is_wrong, wrong_score = wrong_ref_matcher.check_match(frame)
-        
-        h, w = frame.shape[:2]
-        
-        # Calculate visual mock accuracy around 96% based on feature matches
-        def get_acc(score):
-            return min(99.6, max(30.0, 85.0 + (score / 15.0)))
-            
-        # Give a 15% mathematical bias to the Golden template to overcome shared background features
-        if is_golden and (not is_wrong or match_score >= wrong_score * 0.85):
-            system_state["circuit_status"] = "CORRECT"
-            # Draw a beautiful green validation box overlay
-            cv2.rectangle(frame, (10, 10), (w-10, h-10), (0, 255, 100), 4)
-            cv2.putText(frame, f"GOLDEN CIRCUIT DETECTED (ACCURACY: {get_acc(match_score):.1f}%)", (w//2 - 250, h - 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 100), 2)
-        elif is_wrong:
-            system_state["circuit_status"] = "FAULTY"
-            # Draw a red validation box overlay
-            cv2.rectangle(frame, (10, 10), (w-10, h-10), (0, 0, 255), 4)
-            cv2.putText(frame, f"FAULTY CIRCUIT RECOGNIZED (ACCURACY: {get_acc(wrong_score):.1f}%)", (w//2 - 280, h - 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        
-        # 2. PCB Presence fallback
-        if is_golden or is_wrong:
-            pcb_present = True
-        elif hasattr(detector, "is_pcb_in_frame"):
-            pcb_present = detector.is_pcb_in_frame(frame)
-        else:
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            edges = cv2.Canny(gray_frame, 50, 150)
-            edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
-            pcb_present = bool(edge_density > 0.005)
-
-        # Detection
-        detections = detector.detect(frame)
-        clear_expired_alerts()
-
-        if detections:
-            system_state["total_defects"] += len(detections)
-            maybe_trigger_alert(detections)
-            for det in detections:
-                cls  = det["class"]
-                info = DEFECT_CLASSES.get(cls, (None, "#FFF", "?", False))
-                entry = {
-                    "id":         len(system_state["defect_log"]) + 1,
-                    "timestamp":  datetime.now().strftime("%H:%M:%S.%f")[:-3],
-                    "class":      cls,
-                    "confidence": round(det["confidence"] * 100, 1),
-                    "severity":   info[2],
-                    "hex":        info[1],
-                    "is_fault":   info[3],
-                    "tilt":       system_state["tilt_angle"],
-                }
-                system_state["defect_log"].insert(0, entry)
-                if len(system_state["defect_log"]) > 100:
-                    system_state["defect_log"] = system_state["defect_log"][:100]
-                socketio.emit("defect_alert", entry)
-        else:
-            if not system_state["alert_active"]:
-                # Only reset states to unknown/missing if the ORB matching blocks didn't positively identify a circuit.
-                if not (is_golden or is_wrong):
-                    if pcb_present:
-                        system_state["circuit_status"] = "UNKNOWN"
-                    else:
-                        system_state["circuit_status"] = "NO CIRCUIT DETECTED"
-
-        # Annotate & encode
         try:
+            frame = latest_client_frame
+            latest_client_frame = None  # Clear to drop frames until we're done processing this one
+            
+            # ── Simulated Camera Tilt / Rotation
+            tilt = system_state["tilt_angle"]
+            if tilt != 0.0:
+                h, w = frame.shape[:2]
+                M = cv2.getRotationMatrix2D((w // 2, h // 2), tilt, 1.0)
+                frame = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+            if system_state.get("capture_reference"):
+                system_state["capture_reference"] = False
+                cv2.imwrite(os.path.join(BASE_DIR, "reference.jpg"), frame)
+                ref_matcher.load_reference(os.path.join(BASE_DIR, "reference.jpg"))
+                socketio.emit("reference_registered", {"status": "success", "kp": len(ref_matcher.kp_ref) if ref_matcher.kp_ref else 0})
+
+            # 1. ORB Reference Matching
+            is_golden, match_score = ref_matcher.check_match(frame)
+            is_wrong, wrong_score = wrong_ref_matcher.check_match(frame)
+            
+            h, w = frame.shape[:2]
+            
+            # Calculate visual mock accuracy around 96% based on feature matches
+            def get_acc(score):
+                return min(99.6, max(30.0, 85.0 + (score / 15.0)))
+                
+            # Give a 15% mathematical bias to the Golden template to overcome shared background features
+            if is_golden and (not is_wrong or match_score >= wrong_score * 0.85):
+                system_state["circuit_status"] = "CORRECT"
+                cv2.rectangle(frame, (10, 10), (w-10, h-10), (0, 255, 100), 4)
+                cv2.putText(frame, f"GOLDEN CIRCUIT DETECTED (ACCURACY: {get_acc(match_score):.1f}%)", (w//2 - 250, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 100), 2)
+            elif is_wrong:
+                system_state["circuit_status"] = "FAULTY"
+                cv2.rectangle(frame, (10, 10), (w-10, h-10), (0, 0, 255), 4)
+                cv2.putText(frame, f"FAULTY CIRCUIT RECOGNIZED (ACCURACY: {get_acc(wrong_score):.1f}%)", (w//2 - 280, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            
+            # 2. PCB Presence fallback
+            if is_golden or is_wrong:
+                pcb_present = True
+            elif hasattr(detector, "is_pcb_in_frame"):
+                pcb_present = detector.is_pcb_in_frame(frame)
+            else:
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                edges = cv2.Canny(gray_frame, 50, 150)
+                edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
+                pcb_present = bool(edge_density > 0.005)
+
+            # Detection
+            detections = detector.detect(frame)
+            clear_expired_alerts()
+
+            if detections:
+                system_state["total_defects"] += len(detections)
+                maybe_trigger_alert(detections)
+                for det in detections:
+                    cls  = det["class"]
+                    info = DEFECT_CLASSES.get(cls, (None, "#FFF", "?", False))
+                    entry = {
+                        "id":         len(system_state["defect_log"]) + 1,
+                        "timestamp":  datetime.now().strftime("%H:%M:%S.%f")[:-3],
+                        "class":      cls,
+                        "confidence": round(det["confidence"] * 100, 1),
+                        "severity":   info[2],
+                        "hex":        info[1],
+                        "is_fault":   info[3],
+                        "tilt":       system_state["tilt_angle"],
+                    }
+                    system_state["defect_log"].insert(0, entry)
+                    if len(system_state["defect_log"]) > 100:
+                        system_state["defect_log"] = system_state["defect_log"][:100]
+                    socketio.emit("defect_alert", entry)
+            else:
+                if not system_state["alert_active"]:
+                    # Only reset states to unknown/missing if the ORB matching blocks didn't positively identify a circuit.
+                    if not (is_golden or is_wrong):
+                        if pcb_present:
+                            system_state["circuit_status"] = "UNKNOWN"
+                        else:
+                            system_state["circuit_status"] = "NO CIRCUIT DETECTED"
+
+            # Annotate & encode
             frame = annotate(frame, detections)
-            # Add bounding box to visualize the ORB isolation zone!
+            # Add bounding box to visualize the ORB isolation zone
             cv2.rectangle(frame, (int(w*0.2), int(h*0.2)), (int(w*0.8), int(h*0.8)), (255, 255, 255), 1)
             cv2.putText(frame, "PCB ISOLATION ZONE", (int(w*0.2), int(h*0.2) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
             
@@ -459,8 +458,11 @@ def vision_worker_loop():
                 system_state["fps"] = frames_processed / (now - last_eval_time)
                 frames_processed = 0
                 last_eval_time = now
+                
         except Exception as e:
-            print(f"Pipeline render error: {e}")
+            import traceback
+            print(f"[VISION WORKER ERROR] {e}", flush=True)
+            traceback.print_exc()
             time.sleep(0.1)
 
 @socketio.on('client_frame')
