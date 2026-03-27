@@ -142,39 +142,76 @@ class MockYOLODetector:
 class ReferenceMatcher:
     def __init__(self, ref_path="reference.jpg"):
         self.ref_path = ref_path
-        self.orb = cv2.ORB_create(nfeatures=1000)
-        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        self.orb = cv2.ORB_create(nfeatures=2000, scoreType=cv2.ORB_HARRIS_SCORE)
+        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING)
         self.kp_ref, self.des_ref = None, None
+        self.hist_ref = None  # Color histogram for secondary verification
         self.load_reference()
+
+    def _compute_histogram(self, img_color):
+        """Compute a normalized HSV color histogram for the center crop"""
+        hsv = cv2.cvtColor(img_color, cv2.COLOR_BGR2HSV)
+        h, w = hsv.shape[:2]
+        # Focus on center 60% of the image
+        cy1, cy2 = int(h * 0.2), int(h * 0.8)
+        cx1, cx2 = int(w * 0.2), int(w * 0.8)
+        crop = hsv[cy1:cy2, cx1:cx2]
+        hist = cv2.calcHist([crop], [0, 1], None, [30, 32], [0, 180, 0, 256])
+        cv2.normalize(hist, hist)
+        return hist
 
     def load_reference(self, filepath=None):
         if filepath: self.ref_path = filepath
         if os.path.exists(self.ref_path):
-            img = cv2.imread(self.ref_path, cv2.IMREAD_GRAYSCALE)
-            if img is not None:
-                img = cv2.resize(img, (640, 360))
-                h, w = img.shape
+            img_color = cv2.imread(self.ref_path)
+            if img_color is not None:
+                img_color = cv2.resize(img_color, (640, 360))
+                gray = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY)
+                h, w = gray.shape
                 mask = np.zeros((h, w), dtype=np.uint8)
-                cv2.rectangle(mask, (int(w*0.2), int(h*0.2)), (int(w*0.8), int(h*0.8)), 255, -1)
-                self.kp_ref, self.des_ref = self.orb.detectAndCompute(img, mask)
-                print(f"Loaded Golden Reference: {len(self.kp_ref)} ORB keypoints")
+                cv2.rectangle(mask, (int(w*0.15), int(h*0.15)), (int(w*0.85), int(h*0.85)), 255, -1)
+                self.kp_ref, self.des_ref = self.orb.detectAndCompute(gray, mask)
+                self.hist_ref = self._compute_histogram(img_color)
+                print(f"Loaded Golden Reference: {len(self.kp_ref)} ORB keypoints from {os.path.basename(self.ref_path)}")
 
     def check_match(self, frame):
-        """Returns (is_match, score)"""
+        """Returns (is_match, combined_score) using ORB + histogram correlation"""
         if self.des_ref is None: return False, 0
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, (640, 360))
+        
+        # Resize to standard processing size
+        frame_resized = cv2.resize(frame, (640, 360))
+        gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
         h, w = gray.shape
         mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.rectangle(mask, (int(w*0.2), int(h*0.2)), (int(w*0.8), int(h*0.8)), 255, -1)
+        cv2.rectangle(mask, (int(w*0.15), int(h*0.15)), (int(w*0.85), int(h*0.85)), 255, -1)
         
         kp, des = self.orb.detectAndCompute(gray, mask)
-        if des is None or len(des) < 10: return False, 0
+        if des is None or len(des) < 5: return False, 0
         
-        matches = self.bf.match(self.des_ref, des)
-        good_matches = [m for m in matches if m.distance < 64]
-        score = len(good_matches)
-        return score > 8, score
+        # Lowe's Ratio Test with knnMatch - gold standard for feature matching
+        matches = self.bf.knnMatch(self.des_ref, des, k=2)
+        good_matches = []
+        for pair in matches:
+            if len(pair) == 2:
+                m, n = pair
+                if m.distance < 0.75 * n.distance:  # Lowe's ratio threshold
+                    good_matches.append(m)
+        
+        orb_score = len(good_matches)
+        
+        # Histogram correlation for color-based secondary verification
+        hist_score = 0.0
+        if self.hist_ref is not None:
+            hist_frame = self._compute_histogram(frame_resized)
+            hist_score = cv2.compareHist(self.hist_ref, hist_frame, cv2.HISTCMP_CORREL)
+        
+        # Combined score: ORB features weighted + histogram bonus
+        combined_score = orb_score + (hist_score * 10 if hist_score > 0.3 else 0)
+        
+        # Match if we have strong ORB matches OR strong histogram + some ORB
+        is_match = (orb_score >= 6) or (orb_score >= 3 and hist_score > 0.5)
+        
+        return is_match, combined_score
 
 ref_matcher = ReferenceMatcher(os.path.join(BASE_DIR, 'WIN_20260328_00_52_26_Pro.jpg'))
 wrong_ref_matcher = ReferenceMatcher(os.path.join(BASE_DIR, 'WIN_20260328_00_37_20_Pro.jpg'))
