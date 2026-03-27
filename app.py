@@ -25,7 +25,7 @@ import numpy as np
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'yieldvision-ocv-secret-2026'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ─── PATHS ──────────────────────────────────────────────────────────────────────
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
